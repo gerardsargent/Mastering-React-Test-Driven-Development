@@ -3,6 +3,27 @@ import ReactTestUtils from 'react-dom/test-utils';
 import { createContainer } from './domManipulators';
 import { CustomerForm } from '../src/CustomerForm';
 
+const spy = () => {
+  let receivedArguments;
+  return {
+    fn: (...args) => (receivedArguments = args),
+    receivedArguments: () => receivedArguments,
+    receivedArgument: (n) => receivedArguments[n],
+  };
+};
+
+expect.extend({
+  toHaveBeenCalled(received) {
+    if (received.receivedArguments() === undefined) {
+      return {
+        pass: false,
+        message: () => 'Spy was not called.',
+      };
+    }
+    return { pass: true, message: () => 'Spy was called.' };
+  },
+});
+
 describe('CustomerForm', () => {
   let render, container;
 
@@ -10,9 +31,9 @@ describe('CustomerForm', () => {
     ({ render, container } = createContainer());
   });
 
-  const form = id => container.querySelector(`form[id="${id}"]`);
-  const field = name => form('customer').elements[name];
-  const labelFor = formElement =>
+  const form = (id) => container.querySelector(`form[id="${id}"]`);
+  const field = (name) => form('customer').elements[name];
+  const labelFor = (formElement) =>
     container.querySelector(`label[for="${formElement}"]`);
 
   it('renders a form', () => {
@@ -28,19 +49,36 @@ describe('CustomerForm', () => {
     expect(submitButton).not.toBeNull();
   });
 
-  const expectToBeInputFieldOfTypeText = formElement => {
+  it('calls fetch with the right properties when submitting data', async () => {
+    const fetchSpy = spy();
+    render(
+      <CustomerForm fetch={fetchSpy.fn} onSubmit={() => {}} />
+    );
+
+    ReactTestUtils.Simulate.submit(form('customer'));
+    expect(fetchSpy).toHaveBeenCalled();
+    expect(fetchSpy.receivedArgument(0)).toEqual('/customers');
+    const fetchOpts = fetchSpy.receivedArgument(1);
+    expect(fetchOpts.method).toEqual('POST');
+    expect(fetchOpts.credentials).toEqual('same-origin');
+    expect(fetchOpts.headers).toEqual({
+      'Content-Type': 'application/json',
+    });
+  });
+
+  const expectToBeInputFieldOfTypeText = (formElement) => {
     expect(formElement).not.toBeNull();
     expect(formElement.tagName).toEqual('INPUT');
     expect(formElement.type).toEqual('text');
   };
 
-  const itRendersAsATextBox = fieldName =>
+  const itRendersAsATextBox = (fieldName) =>
     it('renders as a text box', () => {
       render(<CustomerForm />);
       expectToBeInputFieldOfTypeText(field(fieldName));
     });
 
-  const itIncludesTheExistingValue = fieldName =>
+  const itIncludesTheExistingValue = (fieldName) =>
     it('includes the existing value', () => {
       render(<CustomerForm {...{ [fieldName]: 'value' }} />);
       expect(field(fieldName).value).toEqual('value');
@@ -53,7 +91,7 @@ describe('CustomerForm', () => {
       expect(labelFor(fieldName).textContent).toEqual(text);
     });
 
-  const itAssignsAnIdThatMatchesTheLabelId = fieldName =>
+  const itAssignsAnIdThatMatchesTheLabelId = (fieldName) =>
     it('assigns an id that matches the label id', () => {
       render(<CustomerForm />);
       expect(field(fieldName).id).toEqual(fieldName);
@@ -61,16 +99,20 @@ describe('CustomerForm', () => {
 
   const itSubmitsExistingValue = (fieldName, value) =>
     it('saves existing value when submitted', async () => {
-      expect.hasAssertions();
+      const submitSpy = spy();
+
       render(
         <CustomerForm
           {...{ [fieldName]: value }}
-          onSubmit={props =>
-            expect(props[fieldName]).toEqual(value)
-          }
+          onSubmit={submitSpy.fn}
         />
       );
-      await ReactTestUtils.Simulate.submit(form('customer'));
+      ReactTestUtils.Simulate.submit(form('customer'));
+
+      expect(submitSpy).toHaveBeenCalled();
+      expect(submitSpy.receivedArgument(0)[fieldName]).toEqual(
+        'value'
+      );
     });
 
   const itSubmitsNewValue = (fieldName, value) =>
@@ -79,13 +121,13 @@ describe('CustomerForm', () => {
       render(
         <CustomerForm
           {...{ [fieldName]: 'existingValue' }}
-          onSubmit={props =>
+          onSubmit={(props) =>
             expect(props[fieldName]).toEqual(value)
           }
         />
       );
       await ReactTestUtils.Simulate.change(field(fieldName), {
-        target: { value, name: fieldName }
+        target: { value, name: fieldName },
       });
       await ReactTestUtils.Simulate.submit(form('customer'));
     });
@@ -113,7 +155,7 @@ describe('CustomerForm', () => {
     itIncludesTheExistingValue('phoneNumber');
     itRendersALabel('phoneNumber', 'Phone number');
     itAssignsAnIdThatMatchesTheLabelId('phoneNumber');
-    itSubmitsExistingValue('phoneNumber', '12345');
-    itSubmitsNewValue('phoneNumber', '67890');
+    itSubmitsExistingValue('phoneNumber', 'value');
+    itSubmitsNewValue('phoneNumber', 'newValue');
   });
 });
